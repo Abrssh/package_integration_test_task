@@ -120,10 +120,6 @@ class _PackageIntegrationScreenState extends State<PackageIntegrationScreen> {
 
   Future<void> configurePlatformFiles(String projectPath, String apiKey) async {
     // Android configuration (modify AndroidManifest.xml)
-    // iOS configuration (modify Info.plist or AppDelegate.swift)
-    // This logic will insert the necessary API key configurations
-
-    // Android: Add to AndroidManifest.xml
     final androidManifestPath =
         '$projectPath/android/app/src/main/AndroidManifest.xml';
     final manifestFile = File(androidManifestPath);
@@ -150,29 +146,34 @@ class _PackageIntegrationScreenState extends State<PackageIntegrationScreen> {
       throw Exception('AndroidManifest.xml not found.');
     }
 
-    // iOS: Add to Info.plist
-    final infoPlistPath = '$projectPath/ios/Runner/Info.plist';
-    final plistFile = File(infoPlistPath);
-    if (await plistFile.exists()) {
-      String content = await plistFile.readAsString();
+    // iOS Configuration
+    final appDelegatePath = '$projectPath/ios/Runner/AppDelegate.swift';
+    try {
+      final file = File(appDelegatePath);
 
-      // Check if GMSApiKey already exists
-      if (content.contains('<key>GMSApiKey</key>')) {
-        // Replace existing API key
-        content = content.replaceAll(
-          RegExp(r'<key>GMSApiKey</key>\s*<string>[^<]*</string>'),
-          '<key>GMSApiKey</key>\n<string>$apiKey</string>',
-        );
-      } else {
-        // Add new API key if it doesn't exist
-        content = content.replaceAll(
-          '</dict>',
-          '<key>GMSApiKey</key>\n<string>$apiKey</string>\n</dict>',
+      if (!await file.exists()) {
+        throw Exception('AppDelegate.swift file not found.');
+      }
+
+      String content = await file.readAsString();
+
+      if (!content.contains('import GoogleMaps')) {
+        content = content.replaceFirst(
+            'import Flutter', 'import Flutter\nimport GoogleMaps');
+      }
+
+      if (!content.contains('GMSServices.provideAPIKey')) {
+        final pattern =
+            RegExp(r'GeneratedPluginRegistrant\.register\(with: self\)');
+        content = content.replaceFirst(
+          pattern,
+          'GMSServices.provideAPIKey("$apiKey")\n    GeneratedPluginRegistrant.register(with: self)',
         );
       }
-      await plistFile.writeAsString(content);
-    } else {
-      throw Exception('Info.plist not found.');
+
+      await file.writeAsString(content);
+    } catch (e) {
+      throw Exception('Failed to update AppDelegate.swift: $e');
     }
   }
 
@@ -424,32 +425,43 @@ void main() {
               const SizedBox(height: 20),
               // API key input
               if (selectedPackage == 'google_maps_flutter')
-                Column(
-                  children: [
-                    TextField(
-                      controller: apiKeyController,
-                      onChanged: (value) {
-                        setState(() {
-                          apiKeyController.text = value;
-                          apiKey = value;
-                        });
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Google Maps API Key',
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: MediaQuery.of(context).size.width * 0.4,
+                            child: TextField(
+                              controller: apiKeyController,
+                              onChanged: (value) {
+                                setState(() {
+                                  apiKeyController.text = value;
+                                  apiKey = value;
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Google Maps API Key',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    TextButton(
-                      onPressed: () async {
-                        // Open Google Maps API Key URL
-                        final Uri url = Uri.parse(
-                            'https://developers.google.com/maps/documentation/android-sdk/get-api-key');
-                        if (!await launchUrl(url)) {
-                          throw Exception('Could not launch $url');
-                        }
-                      },
-                      child: const Text('Get API Key'),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: () async {
+                          // Open Google Maps API Key URL
+                          final Uri url = Uri.parse(
+                              'https://developers.google.com/maps/documentation/android-sdk/get-api-key');
+                          if (!await launchUrl(url)) {
+                            throw Exception('Could not launch $url');
+                          }
+                        },
+                        child: const Text('Get API Key'),
+                      ),
+                    ],
+                  ),
                 ),
               const SizedBox(height: 20),
               // Add package button
@@ -461,122 +473,149 @@ void main() {
                 child: const Text('Add Package'),
               ),
               const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Text(
-                      progress >= 0.4
-                          ? 'Added Platform Specific Configurations Successfully!'
-                          : 'Adding Platform Specific Configurations for $selectedPackage dependency...',
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: progress >= 0.4 ? Colors.green : Colors.black),
-                    ),
-                    const SizedBox(
-                      width: 70,
-                    ),
-                    progress >= 0.4
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green, size: 25)
-                        : SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                    strokeWidth: 2)
-                                : null,
+
+              isLoading
+                  ? Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            progress >= 0.4
+                                ? 'Added Platform Specific Configurations Successfully!'
+                                : 'Adding Platform Specific Configurations for $selectedPackage dependency...',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: progress >= 0.4
+                                    ? Colors.green
+                                    : Colors.black),
                           ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Text(
-                      progress >= 0.6
-                          ? 'Added Demo Feature to the Main.dart file Successfully!'
-                          : 'Adding Demo Feature to the Main.dart file ...',
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: progress >= 0.6 ? Colors.green : Colors.black),
-                    ),
-                    const SizedBox(
-                      width: 70,
-                    ),
-                    progress >= 0.6
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green, size: 25)
-                        : SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                    strokeWidth: 2)
-                                : null,
+                          const SizedBox(
+                            width: 70,
                           ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Text(
-                      progress >= 0.8
-                          ? '$selectedPackage added Successfully!'
-                          : 'Running flutter pub add for $selectedPackage dependency...',
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: progress >= 0.8 ? Colors.green : Colors.black),
+                          progress >= 0.4
+                              ? const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 25)
+                              : SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: isLoading
+                                      ? const CircularProgressIndicator(
+                                          strokeWidth: 2)
+                                      : null,
+                                ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(
+                      height: 0,
                     ),
-                    const SizedBox(
-                      width: 70,
-                    ),
-                    progress >= 0.8
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green, size: 25)
-                        : SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                    strokeWidth: 2)
-                                : null,
+
+              isLoading
+                  ? Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            progress >= 0.6
+                                ? 'Added Demo Feature to the Main.dart file Successfully!'
+                                : 'Adding Demo Feature to the Main.dart file ...',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: progress >= 0.6
+                                    ? Colors.green
+                                    : Colors.black),
                           ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Text(
-                      progress == 1
-                          ? 'Package added to your project successfully!'
-                          : 'Adding $selectedPackage to your Project...',
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: progress == 1 ? Colors.green : Colors.black),
-                    ),
-                    const SizedBox(
-                      width: 70,
-                    ),
-                    progress == 1
-                        ? const Icon(Icons.check_circle,
-                            color: Colors.green, size: 25)
-                        : SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                    strokeWidth: 2)
-                                : null,
+                          const SizedBox(
+                            width: 70,
                           ),
-                  ],
-                ),
-              ),
+                          progress >= 0.6
+                              ? const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 25)
+                              : SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: isLoading
+                                      ? const CircularProgressIndicator(
+                                          strokeWidth: 2)
+                                      : null,
+                                ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(
+                      height: 0,
+                    ),
+              isLoading
+                  ? Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            progress >= 0.8
+                                ? '$selectedPackage added Successfully!'
+                                : 'Running flutter pub add for $selectedPackage dependency...',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: progress >= 0.8
+                                    ? Colors.green
+                                    : Colors.black),
+                          ),
+                          const SizedBox(
+                            width: 70,
+                          ),
+                          progress >= 0.8
+                              ? const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 25)
+                              : SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: isLoading
+                                      ? const CircularProgressIndicator(
+                                          strokeWidth: 2)
+                                      : null,
+                                ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(
+                      height: 0,
+                    ),
+              isLoading
+                  ? Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            progress == 1
+                                ? 'Package added to your project successfully!'
+                                : 'Adding $selectedPackage to your Project...',
+                            style: TextStyle(
+                                fontSize: 16,
+                                color: progress == 1
+                                    ? Colors.green
+                                    : Colors.black),
+                          ),
+                          const SizedBox(
+                            width: 70,
+                          ),
+                          progress == 1
+                              ? const Icon(Icons.check_circle,
+                                  color: Colors.green, size: 25)
+                              : SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: isLoading
+                                      ? const CircularProgressIndicator(
+                                          strokeWidth: 2)
+                                      : null,
+                                ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox(
+                      height: 0,
+                    ),
+
               const SizedBox(
                 height: 15,
               ),
